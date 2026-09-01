@@ -1,6 +1,6 @@
 -- QTHANG-HUB ServerHop
 -- Creator: @qthangccth -- ===== KHÓA SCRIPT =====
-local LOCK_ENABLED = true   -- true = khóa, false = mở khóa
+local LOCK_ENABLED = false   -- true = khóa, false = mở khóa
 
 if LOCK_ENABLED then
     print("🔒 Script đã bị khóa! Liên hệ @qthangccth để mở khóa.")
