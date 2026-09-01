@@ -1,5 +1,12 @@
 -- QTHANG-HUB ServerHop
--- Creator: @qthangccth
+-- Creator: @qthangccth -- ===== KHÓA SCRIPT =====
+local LOCK_ENABLED = true   -- true = khóa, false = mở khóa
+
+if LOCK_ENABLED then
+    print("🔒 Script đã bị khóa! Liên hệ @qthangccth để mở khóa.")
+    return
+end
+-- ========================
 
 local P=game:GetService("Players")
 local T=game:GetService("TeleportService")
