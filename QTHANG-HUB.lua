@@ -1,4 +1,4 @@
--- HopSV v2 - Server Hop GUI
+-- HopSV v2 - Server Hop GUI + Fix Lag 50%
 -- Creator: @qthangccth -- ===== KHÓA SCRIPT =====
 local LOCK_ENABLED = false   -- true = khóa, false = mở khóa
 
@@ -7,7 +7,7 @@ if LOCK_ENABLED then
     return
 end
 -- ========================
--- Features: Rainbow border white toggle button with animated colorful text
+-- Features: Server hop + Fix Lag 50%
 
 local P=game:GetService("Players")
 local T=game:GetService("TeleportService")
@@ -17,6 +17,9 @@ local U=game:GetService("UserInputService")
 local L=P.LocalPlayer
 local PID=game.PlaceId
 local TS=game:GetService("TweenService")
+local RS=game:GetService("RunService")
+local Lighting=game:GetService("Lighting")
+local Workspace=game:GetService("Workspace")
 
 if _G.QH then
     pcall(function()
@@ -30,6 +33,82 @@ g.Parent=C
 _G.QH=g
 g.ResetOnSpawn=false
 g.IgnoreGuiInset=true
+
+-- FIX LAG SYSTEM
+local fixLagEnabled=false
+local originalSettings={}
+local fixLagConnection=nil
+local hiddenParts={}
+
+local function enableFixLag()
+    if fixLagEnabled then return end
+    fixLagEnabled=true
+    
+    -- Save original settings
+    originalSettings.GlobalShadows=Lighting.GlobalShadows
+    originalSettings.FogEnd=Lighting.FogEnd
+    originalSettings.FogStart=Lighting.FogStart
+    originalSettings.Brightness=Lighting.Brightness
+    originalSettings.EnvironmentDiffuseScale=Lighting.EnvironmentDiffuseScale
+    originalSettings.EnvironmentSpecularScale=Lighting.EnvironmentSpecularScale
+    
+    -- Optimize lighting
+    Lighting.GlobalShadows=false
+    Lighting.FogEnd=100000
+    Lighting.FogStart=100000
+    Lighting.Brightness=1
+    Lighting.EnvironmentDiffuseScale=0
+    Lighting.EnvironmentSpecularScale=0
+    
+    -- Remove textures and decals
+    for _,obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Decal") or obj:IsA("Texture") then
+            if obj.Transparency~=1 then
+                obj.Transparency=1
+            end
+        end
+        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+            obj.Enabled=false
+        end
+        if obj:IsA("BasePart") then
+            obj.Material=Enum.Material.SmoothPlastic
+            if obj:FindFirstChildOfClass("SpecialMesh") then
+                obj:FindFirstChildOfClass("SpecialMesh"):Destroy()
+            end
+        end
+    end
+    
+    -- Continuous optimization
+    fixLagConnection=RS.Heartbeat:Connect(function()
+        -- Remove effects from new parts
+        for _,obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                if obj.Enabled then obj.Enabled=false end
+            end
+            if obj:IsA("Decal") or obj:IsA("Texture") then
+                if obj.Transparency~=1 then obj.Transparency=1 end
+            end
+        end
+    end)
+end
+
+local function disableFixLag()
+    if not fixLagEnabled then return end
+    fixLagEnabled=false
+    
+    if fixLagConnection then
+        fixLagConnection:Disconnect()
+        fixLagConnection=nil
+    end
+    
+    -- Restore original settings
+    Lighting.GlobalShadows=originalSettings.GlobalShadows
+    Lighting.FogEnd=originalSettings.FogEnd
+    Lighting.FogStart=originalSettings.FogStart
+    Lighting.Brightness=originalSettings.Brightness
+    Lighting.EnvironmentDiffuseScale=originalSettings.EnvironmentDiffuseScale
+    Lighting.EnvironmentSpecularScale=originalSettings.EnvironmentSpecularScale
+end
 
 -- LOADING SCREEN
 local loadingFrame=Instance.new("Frame")
@@ -107,8 +186,8 @@ end)
 -- MAIN MENU
 function createMainMenu()
     local rf=Instance.new("Frame")
-    rf.Size=UDim2.new(0,260,0,250)
-    rf.Position=UDim2.new(0.5,-130,0.5,-125)
+    rf.Size=UDim2.new(0,260,0,290)
+    rf.Position=UDim2.new(0.5,-130,0.5,-145)
     rf.BackgroundColor3=Color3.fromRGB(255,255,255)
     rf.BorderSizePixel=0
     rf.BackgroundTransparency=1
@@ -159,8 +238,8 @@ function createMainMenu()
     end)
 
     local f=Instance.new("Frame")
-    f.Size=UDim2.new(0,248,0,238)
-    f.Position=UDim2.new(0.5,-124,0.5,-119)
+    f.Size=UDim2.new(0,248,0,278)
+    f.Position=UDim2.new(0.5,-124,0.5,-139)
     f.BackgroundColor3=Color3.fromRGB(15,25,15)
     f.BackgroundTransparency=0
     f.BorderSizePixel=0
@@ -213,7 +292,7 @@ function createMainMenu()
             drop.Parent=rainContainer
             spawn(function()
                 local currentY=drop.Position.Y.Offset
-                while drop and drop.Parent and currentY<250 do
+                while drop and drop.Parent and currentY<290 do
                     currentY=currentY+math.random(4,10)
                     drop.Position=UDim2.new(0,drop.Position.X.Offset,0,currentY)
                     wait(0.016)
@@ -411,10 +490,54 @@ function createMainMenu()
         hb.TextSize=14
     end)
 
+    -- FIX LAG BUTTON
+    local fixLagButton=Instance.new("TextButton")
+    fixLagButton.Size=UDim2.new(0.85,0,0,30)
+    fixLagButton.Position=UDim2.new(0.075,0,0,162)
+    fixLagButton.BackgroundColor3=Color3.fromRGB(100,100,100)
+    fixLagButton.Text="FIX LAG: OFF"
+    fixLagButton.TextColor3=Color3.fromRGB(255,255,255)
+    fixLagButton.TextSize=12
+    fixLagButton.Font=Enum.Font.GothamBlack
+    fixLagButton.ZIndex=11
+    fixLagButton.Parent=cf
+
+    local fixLagStroke=Instance.new("UIStroke")
+    fixLagStroke.Color=Color3.fromRGB(255,255,255)
+    fixLagStroke.Thickness=1
+    fixLagStroke.Parent=fixLagButton
+
+    local fixLagCorner=Instance.new("UICorner")
+    fixLagCorner.CornerRadius=UDim.new(0,8)
+    fixLagCorner.Parent=fixLagButton
+
+    fixLagButton.MouseEnter:Connect(function()
+        fixLagButton.BackgroundColor3=Color3.fromRGB(150,150,150)
+    end)
+    fixLagButton.MouseLeave:Connect(function()
+        if fixLagEnabled then
+            fixLagButton.BackgroundColor3=Color3.fromRGB(0,200,0)
+        else
+            fixLagButton.BackgroundColor3=Color3.fromRGB(100,100,100)
+        end
+    end)
+
+    fixLagButton.MouseButton1Click:Connect(function()
+        if fixLagEnabled then
+            disableFixLag()
+            fixLagButton.Text="FIX LAG: OFF"
+            fixLagButton.BackgroundColor3=Color3.fromRGB(100,100,100)
+        else
+            enableFixLag()
+            fixLagButton.Text="FIX LAG: ON"
+            fixLagButton.BackgroundColor3=Color3.fromRGB(0,200,0)
+        end
+    end)
+
     -- TikTok Label
     local cl=Instance.new("TextLabel")
     cl.Size=UDim2.new(1,-20,0,15)
-    cl.Position=UDim2.new(0,10,0,165)
+    cl.Position=UDim2.new(0,10,0,198)
     cl.BackgroundTransparency=1
     cl.Text="TIKTOK: @qthangccth"
     cl.TextColor3=Color3.fromRGB(255,105,180)
@@ -468,7 +591,7 @@ function createMainMenu()
 
     hb.MouseButton1Click:Connect(sh)
 
-    -- TOGGLE BUTTON (White with rainbow border + animated colorful text)
+    -- TOGGLE BUTTON
     local menuVisible=true
     local toggleButton=Instance.new("TextButton")
     toggleButton.Size=UDim2.new(0,70,0,70)
@@ -489,7 +612,6 @@ function createMainMenu()
     toggleCorner.CornerRadius=UDim.new(0,14)
     toggleCorner.Parent=toggleButton
 
-    -- Rainbow border
     local toggleGradient=Instance.new("UIGradient")
     toggleGradient.Parent=toggleButton
 
@@ -512,7 +634,6 @@ function createMainMenu()
     toggleStroke.Thickness=3
     toggleStroke.Parent=toggleButton
 
-    -- Animated text color
     spawn(function()
         local textHue=0
         while toggleButton and toggleButton.Parent do
@@ -538,10 +659,8 @@ function createMainMenu()
     end
 
     m.MouseButton1Click:Connect(hideMenu)
-
     toggleButton.MouseButton1Click:Connect(showMenu)
 
-    -- F5 Toggle
     U.InputBegan:Connect(function(i,gp)
         if gp then return end
         if i.KeyCode==Enum.KeyCode.F5 then
@@ -554,7 +673,7 @@ function createMainMenu()
     end)
 
     print("HopSV v2 loaded")
-    print("Features: Rainbow border + animated text toggle")
+    print("Features: Server hop + Fix Lag 50%")
     print("Press F5 or X to toggle menu")
 end
 
