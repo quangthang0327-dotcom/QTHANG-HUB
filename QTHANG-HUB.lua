@@ -1,5 +1,5 @@
---// HopSV v3
---// Server Hop + Strong Fix Lag + FPS + Ping
+--// HopSV v4
+--// Server Hop + Strong Fix Lag + Graphics 99% + FPS + Ping
 --// Creator: @qthangccth
 
 local Players = game:GetService("Players")
@@ -38,11 +38,15 @@ _G.QH = GUI
 --==================================================
 
 local FixLagEnabled = false
-local FixLagConnection = nil
-local LightingConnection = nil
+local Graphics99Enabled = false
+
+local FixLagConnection
+local LightingConnection
+local GraphicsConnection
 
 local OldLighting = {}
 local OldEffects = {}
+local GraphicsSaved = {}
 
 --==================================================
 -- HELPERS
@@ -84,6 +88,7 @@ local function MakeDraggable(frame, handle)
     local startPosition
 
     handle.InputBegan:Connect(function(input)
+
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
 
@@ -92,14 +97,17 @@ local function MakeDraggable(frame, handle)
             startPosition = frame.Position
 
             input.Changed:Connect(function()
+
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
                 end
+
             end)
         end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
+
         if not dragging then
             return
         end
@@ -125,7 +133,6 @@ end
 
 local function OptimizeObject(obj)
 
-    -- Tắt hiệu ứng hạt
     if obj:IsA("ParticleEmitter")
     or obj:IsA("Trail")
     or obj:IsA("Beam")
@@ -137,7 +144,6 @@ local function OptimizeObject(obj)
         return
     end
 
-    -- Tắt các hiệu ứng hậu kỳ nặng
     if obj:IsA("BloomEffect")
     or obj:IsA("BlurEffect")
     or obj:IsA("SunRaysEffect")
@@ -151,11 +157,12 @@ local function OptimizeObject(obj)
         return
     end
 
-    -- Giảm chất lượng Material nhưng KHÔNG xóa Mesh
     if obj:IsA("BasePart") then
+
         pcall(function()
             obj.Material = Enum.Material.SmoothPlastic
         end)
+
     end
 end
 
@@ -167,17 +174,24 @@ local function EnableFixLag()
 
     FixLagEnabled = true
 
-    -- Lưu Lighting
-    OldLighting.GlobalShadows = Lighting.GlobalShadows
-    OldLighting.FogEnd = Lighting.FogEnd
-    OldLighting.FogStart = Lighting.FogStart
-    OldLighting.Brightness = Lighting.Brightness
+    OldLighting.GlobalShadows =
+        Lighting.GlobalShadows
+
+    OldLighting.FogEnd =
+        Lighting.FogEnd
+
+    OldLighting.FogStart =
+        Lighting.FogStart
+
+    OldLighting.Brightness =
+        Lighting.Brightness
+
     OldLighting.EnvironmentDiffuseScale =
         Lighting.EnvironmentDiffuseScale
+
     OldLighting.EnvironmentSpecularScale =
         Lighting.EnvironmentSpecularScale
 
-    -- Lighting tối ưu
     Lighting.GlobalShadows = false
     Lighting.FogEnd = 100000
     Lighting.FogStart = 100000
@@ -185,43 +199,45 @@ local function EnableFixLag()
     Lighting.EnvironmentDiffuseScale = 0
     Lighting.EnvironmentSpecularScale = 0
 
-    -- Tắt hiệu ứng trong Lighting
     for _, obj in ipairs(Lighting:GetChildren()) do
         OptimizeObject(obj)
     end
 
-    -- Tối ưu Workspace hiện tại
     for _, obj in ipairs(workspace:GetDescendants()) do
         OptimizeObject(obj)
     end
 
-    -- Xử lý object mới
-    FixLagConnection = workspace.DescendantAdded:Connect(function(obj)
+    FixLagConnection =
+        workspace.DescendantAdded:Connect(function(obj)
 
-        if not FixLagEnabled then
-            return
-        end
-
-        task.defer(function()
-            if obj and obj.Parent then
-                OptimizeObject(obj)
+            if not FixLagEnabled then
+                return
             end
+
+            task.defer(function()
+
+                if obj and obj.Parent then
+                    OptimizeObject(obj)
+                end
+
+            end)
         end)
-    end)
 
-    -- Xử lý effect mới trong Lighting
-    LightingConnection = Lighting.ChildAdded:Connect(function(obj)
+    LightingConnection =
+        Lighting.ChildAdded:Connect(function(obj)
 
-        if not FixLagEnabled then
-            return
-        end
-
-        task.defer(function()
-            if obj and obj.Parent then
-                OptimizeObject(obj)
+            if not FixLagEnabled then
+                return
             end
+
+            task.defer(function()
+
+                if obj and obj.Parent then
+                    OptimizeObject(obj)
+                end
+
+            end)
         end)
-    end)
 end
 
 local function DisableFixLag()
@@ -242,8 +258,8 @@ local function DisableFixLag()
         LightingConnection = nil
     end
 
-    -- Khôi phục Lighting
     pcall(function()
+
         Lighting.GlobalShadows =
             OldLighting.GlobalShadows
 
@@ -261,18 +277,151 @@ local function DisableFixLag()
 
         Lighting.EnvironmentSpecularScale =
             OldLighting.EnvironmentSpecularScale
+
     end)
 
-    -- Khôi phục PostEffect
     for obj, state in pairs(OldEffects) do
+
         if obj and obj.Parent then
+
             pcall(function()
                 obj.Enabled = state
             end)
+
         end
     end
 
     table.clear(OldEffects)
+end
+
+--==================================================
+-- GRAPHICS 99%
+--==================================================
+
+local function HideGraphics(obj)
+
+    if obj:IsA("BasePart") then
+
+        if GraphicsSaved[obj] == nil then
+            GraphicsSaved[obj] =
+                obj.LocalTransparencyModifier
+        end
+
+        obj.LocalTransparencyModifier = 1
+
+    elseif obj:IsA("Decal")
+    or obj:IsA("Texture") then
+
+        if GraphicsSaved[obj] == nil then
+            GraphicsSaved[obj] = obj.Transparency
+        end
+
+        obj.Transparency = 1
+
+    elseif obj:IsA("ParticleEmitter")
+    or obj:IsA("Trail")
+    or obj:IsA("Beam")
+    or obj:IsA("Smoke")
+    or obj:IsA("Fire")
+    or obj:IsA("Sparkles") then
+
+        if GraphicsSaved[obj] == nil then
+            GraphicsSaved[obj] = obj.Enabled
+        end
+
+        obj.Enabled = false
+
+    elseif obj:IsA("PostEffect") then
+
+        if GraphicsSaved[obj] == nil then
+            GraphicsSaved[obj] = obj.Enabled
+        end
+
+        obj.Enabled = false
+    end
+end
+
+local function EnableGraphics99()
+
+    if Graphics99Enabled then
+        return
+    end
+
+    Graphics99Enabled = true
+
+    pcall(function()
+        workspace.Terrain.Decoration = false
+    end)
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        HideGraphics(obj)
+    end
+
+    GraphicsConnection =
+        workspace.DescendantAdded:Connect(function(obj)
+
+            if not Graphics99Enabled then
+                return
+            end
+
+            task.defer(function()
+
+                if obj and obj.Parent then
+                    HideGraphics(obj)
+                end
+
+            end)
+        end)
+end
+
+local function DisableGraphics99()
+
+    if not Graphics99Enabled then
+        return
+    end
+
+    Graphics99Enabled = false
+
+    if GraphicsConnection then
+        GraphicsConnection:Disconnect()
+        GraphicsConnection = nil
+    end
+
+    for obj, value in pairs(GraphicsSaved) do
+
+        if obj and obj.Parent then
+
+            pcall(function()
+
+                if obj:IsA("BasePart") then
+
+                    obj.LocalTransparencyModifier = value
+
+                elseif obj:IsA("Decal")
+                or obj:IsA("Texture") then
+
+                    obj.Transparency = value
+
+                elseif obj:IsA("ParticleEmitter")
+                or obj:IsA("Trail")
+                or obj:IsA("Beam")
+                or obj:IsA("Smoke")
+                or obj:IsA("Fire")
+                or obj:IsA("Sparkles")
+                or obj:IsA("PostEffect") then
+
+                    obj.Enabled = value
+                end
+
+            end)
+        end
+    end
+
+    table.clear(GraphicsSaved)
+
+    pcall(function()
+        workspace.Terrain.Decoration = true
+    end)
 end
 
 --==================================================
@@ -293,7 +442,7 @@ Create("TextLabel", {
     Size = UDim2.new(1, 0, 0, 28),
     Position = UDim2.new(0, 0, 0, 8),
     BackgroundTransparency = 1,
-    Text = "HopSV v3",
+    Text = "HopSV v4",
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 18,
     Font = Enum.Font.GothamBlack
@@ -353,8 +502,8 @@ task.wait(0.55)
 --==================================================
 
 local Main = Create("Frame", {
-    Size = UDim2.new(0, 235, 0, 250),
-    Position = UDim2.new(0.5, -117, 0.5, -125),
+    Size = UDim2.new(0, 235, 0, 285),
+    Position = UDim2.new(0.5, -117, 0.5, -142),
     BackgroundColor3 = Color3.fromRGB(15, 25, 15),
     BorderSizePixel = 0,
     Active = true
@@ -380,7 +529,7 @@ Create("TextLabel", {
     Size = UDim2.new(1, -45, 1, 0),
     Position = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1,
-    Text = "HopSV v3",
+    Text = "HopSV v4",
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 14,
     Font = Enum.Font.GothamBlack,
@@ -440,7 +589,6 @@ RunService.RenderStepped:Connect(function()
                     "Data Ping"
                 ]:GetValue()
             )
-
         end)
 
         StatsLabel.Text =
@@ -510,9 +658,7 @@ local ServerInput = Create("TextBox", {
     ClearTextOnFocus = false
 }, InputBG)
 
-ServerInput:GetPropertyChangedSignal(
-    "Text"
-):Connect(function()
+ServerInput:GetPropertyChangedSignal("Text"):Connect(function()
 
     local n = tonumber(ServerInput.Text)
 
@@ -660,7 +806,7 @@ HopButton.MouseButton1Click:Connect(function()
 end)
 
 --==================================================
--- STRONG FIX LAG BUTTON
+-- FIX LAG BUTTON
 --==================================================
 
 local FixButton = Create("TextButton", {
@@ -696,6 +842,52 @@ FixButton.MouseButton1Click:Connect(function()
 
         FixButton.BackgroundColor3 =
             Color3.fromRGB(0, 190, 0)
+    end
+end)
+
+--==================================================
+-- GRAPHICS 99% BUTTON
+--==================================================
+
+local GraphicsButton = Create("TextButton", {
+    Size = UDim2.new(0.86, 0, 0, 29),
+    Position = UDim2.new(0.07, 0, 0, 241),
+    BackgroundColor3 = Color3.fromRGB(80, 80, 80),
+    Text = "GRAPHICS 99%: OFF",
+    TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 11,
+    Font = Enum.Font.GothamBlack
+}, Main)
+
+Corner(GraphicsButton, 8)
+
+GraphicsButton.MouseButton1Click:Connect(function()
+
+    if Graphics99Enabled then
+
+        DisableGraphics99()
+
+        GraphicsButton.Text =
+            "GRAPHICS 99%: OFF"
+
+        GraphicsButton.BackgroundColor3 =
+            Color3.fromRGB(80, 80, 80)
+
+        Status.Text =
+            "Da khoi phuc do hoa"
+
+    else
+
+        EnableGraphics99()
+
+        GraphicsButton.Text =
+            "GRAPHICS 99%: ON"
+
+        GraphicsButton.BackgroundColor3 =
+            Color3.fromRGB(180, 80, 0)
+
+        Status.Text =
+            "Graphics 99%: ON"
     end
 end)
 
@@ -748,19 +940,28 @@ UserInputService.InputBegan:Connect(function(
     if input.KeyCode == Enum.KeyCode.F5 then
 
         if Main.Visible then
+
             Main.Visible = false
             Toggle.Visible = true
+
         else
+
             Main.Visible = true
             Toggle.Visible = false
+
         end
     end
 end)
 
+--==================================================
+-- DONE
+--==================================================
+
 print("================================")
-print("HopSV v3 Loaded")
+print("HopSV v4 Loaded")
 print("Server Hop: ON")
 print("Strong Fix Lag: READY")
+print("Graphics 99%: READY")
 print("FPS / Ping: ON")
 print("Mobile Drag: ON")
-print("================================")
+print("================================")fromR
