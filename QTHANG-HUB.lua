@@ -1,5 +1,5 @@
 --// HopSV v3
---// Server Hop + Fix Lag + FPS + Ping
+--// Server Hop + Strong Fix Lag + FPS + Ping
 --// Creator: @qthangccth
 
 local Players = game:GetService("Players")
@@ -24,14 +24,14 @@ if _G.QH then
     end)
 end
 
-_G.QH = Instance.new("ScreenGui")
-_G.QH.Name = "HopSV"
-_G.QH.ResetOnSpawn = false
-_G.QH.IgnoreGuiInset = true
-_G.QH.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-_G.QH.Parent = CoreGui
+local GUI = Instance.new("ScreenGui")
+GUI.Name = "HopSV"
+GUI.ResetOnSpawn = false
+GUI.IgnoreGuiInset = true
+GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+GUI.Parent = CoreGui
 
-local GUI = _G.QH
+_G.QH = GUI
 
 --==================================================
 -- SETTINGS
@@ -39,8 +39,10 @@ local GUI = _G.QH
 
 local FixLagEnabled = false
 local FixLagConnection = nil
+local LightingConnection = nil
 
 local OldLighting = {}
+local OldEffects = {}
 
 --==================================================
 -- HELPERS
@@ -71,7 +73,7 @@ local function Stroke(parent, color, thickness)
 end
 
 --==================================================
--- DRAG SYSTEM - MOUSE + TOUCH
+-- MOBILE DRAG
 --==================================================
 
 local function MakeDraggable(frame, handle)
@@ -98,7 +100,9 @@ local function MakeDraggable(frame, handle)
     end)
 
     UserInputService.InputChanged:Connect(function(input)
-        if not dragging then return end
+        if not dragging then
+            return
+        end
 
         if input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch then
@@ -116,16 +120,54 @@ local function MakeDraggable(frame, handle)
 end
 
 --==================================================
--- FIX LAG
+-- STRONG FIX LAG
 --==================================================
 
+local function OptimizeObject(obj)
+
+    -- Tắt hiệu ứng hạt
+    if obj:IsA("ParticleEmitter")
+    or obj:IsA("Trail")
+    or obj:IsA("Beam")
+    or obj:IsA("Smoke")
+    or obj:IsA("Fire")
+    or obj:IsA("Sparkles") then
+
+        obj.Enabled = false
+        return
+    end
+
+    -- Tắt các hiệu ứng hậu kỳ nặng
+    if obj:IsA("BloomEffect")
+    or obj:IsA("BlurEffect")
+    or obj:IsA("SunRaysEffect")
+    or obj:IsA("DepthOfFieldEffect") then
+
+        if OldEffects[obj] == nil then
+            OldEffects[obj] = obj.Enabled
+        end
+
+        obj.Enabled = false
+        return
+    end
+
+    -- Giảm chất lượng Material nhưng KHÔNG xóa Mesh
+    if obj:IsA("BasePart") then
+        pcall(function()
+            obj.Material = Enum.Material.SmoothPlastic
+        end)
+    end
+end
+
 local function EnableFixLag()
+
     if FixLagEnabled then
         return
     end
 
     FixLagEnabled = true
 
+    -- Lưu Lighting
     OldLighting.GlobalShadows = Lighting.GlobalShadows
     OldLighting.FogEnd = Lighting.FogEnd
     OldLighting.FogStart = Lighting.FogStart
@@ -135,6 +177,7 @@ local function EnableFixLag()
     OldLighting.EnvironmentSpecularScale =
         Lighting.EnvironmentSpecularScale
 
+    -- Lighting tối ưu
     Lighting.GlobalShadows = false
     Lighting.FogEnd = 100000
     Lighting.FogStart = 100000
@@ -142,38 +185,47 @@ local function EnableFixLag()
     Lighting.EnvironmentDiffuseScale = 0
     Lighting.EnvironmentSpecularScale = 0
 
-    local function OptimizeObject(obj)
-        if obj:IsA("ParticleEmitter")
-        or obj:IsA("Trail")
-        or obj:IsA("Smoke")
-        or obj:IsA("Fire")
-        or obj:IsA("Sparkles") then
-
-            obj.Enabled = false
-
-        elseif obj:IsA("Decal")
-        or obj:IsA("Texture") then
-
-            obj.Transparency = 1
-        end
+    -- Tắt hiệu ứng trong Lighting
+    for _, obj in ipairs(Lighting:GetChildren()) do
+        OptimizeObject(obj)
     end
 
+    -- Tối ưu Workspace hiện tại
     for _, obj in ipairs(workspace:GetDescendants()) do
         OptimizeObject(obj)
     end
 
+    -- Xử lý object mới
     FixLagConnection = workspace.DescendantAdded:Connect(function(obj)
-        if FixLagEnabled then
-            task.defer(function()
-                if obj and obj.Parent then
-                    OptimizeObject(obj)
-                end
-            end)
+
+        if not FixLagEnabled then
+            return
         end
+
+        task.defer(function()
+            if obj and obj.Parent then
+                OptimizeObject(obj)
+            end
+        end)
+    end)
+
+    -- Xử lý effect mới trong Lighting
+    LightingConnection = Lighting.ChildAdded:Connect(function(obj)
+
+        if not FixLagEnabled then
+            return
+        end
+
+        task.defer(function()
+            if obj and obj.Parent then
+                OptimizeObject(obj)
+            end
+        end)
     end)
 end
 
 local function DisableFixLag()
+
     if not FixLagEnabled then
         return
     end
@@ -185,16 +237,42 @@ local function DisableFixLag()
         FixLagConnection = nil
     end
 
+    if LightingConnection then
+        LightingConnection:Disconnect()
+        LightingConnection = nil
+    end
+
+    -- Khôi phục Lighting
     pcall(function()
-        Lighting.GlobalShadows = OldLighting.GlobalShadows
-        Lighting.FogEnd = OldLighting.FogEnd
-        Lighting.FogStart = OldLighting.FogStart
-        Lighting.Brightness = OldLighting.Brightness
+        Lighting.GlobalShadows =
+            OldLighting.GlobalShadows
+
+        Lighting.FogEnd =
+            OldLighting.FogEnd
+
+        Lighting.FogStart =
+            OldLighting.FogStart
+
+        Lighting.Brightness =
+            OldLighting.Brightness
+
         Lighting.EnvironmentDiffuseScale =
             OldLighting.EnvironmentDiffuseScale
+
         Lighting.EnvironmentSpecularScale =
             OldLighting.EnvironmentSpecularScale
     end)
+
+    -- Khôi phục PostEffect
+    for obj, state in pairs(OldEffects) do
+        if obj and obj.Parent then
+            pcall(function()
+                obj.Enabled = state
+            end)
+        end
+    end
+
+    table.clear(OldEffects)
 end
 
 --==================================================
@@ -249,9 +327,15 @@ local LoadingText = Create("TextLabel", {
 }, Loading)
 
 task.spawn(function()
+
     for i = 0, 100, 10 do
-        Bar.Size = UDim2.new(i / 100, 0, 1, 0)
-        LoadingText.Text = "Dang tai... " .. i .. "%"
+
+        Bar.Size =
+            UDim2.new(i / 100, 0, 1, 0)
+
+        LoadingText.Text =
+            "Dang tai... " .. i .. "%"
+
         task.wait(0.035)
     end
 
@@ -262,11 +346,11 @@ task.spawn(function()
     end
 end)
 
+task.wait(0.55)
+
 --==================================================
 -- MAIN GUI
 --==================================================
-
-task.wait(0.55)
 
 local Main = Create("Frame", {
     Size = UDim2.new(0, 235, 0, 250),
@@ -280,7 +364,7 @@ Corner(Main, 12)
 Stroke(Main, Color3.fromRGB(0, 255, 0), 1.5)
 
 --==================================================
--- TITLE
+-- HEADER
 --==================================================
 
 local Header = Create("Frame", {
@@ -328,35 +412,40 @@ local StatsLabel = Create("TextLabel", {
     Text = "FPS: --   |   PING: --",
     TextColor3 = Color3.fromRGB(0, 255, 0),
     TextSize = 12,
-    Font = Enum.Font.GothamBlack,
-    TextXAlignment = Enum.TextXAlignment.Center
+    Font = Enum.Font.GothamBlack
 }, Main)
 
 local Frames = 0
 local LastFPSUpdate = os.clock()
-local CurrentFPS = 0
 
 RunService.RenderStepped:Connect(function()
+
     Frames += 1
 
     local now = os.clock()
 
     if now - LastFPSUpdate >= 1 then
-        CurrentFPS = Frames
+
+        local FPS = Frames
+
         Frames = 0
         LastFPSUpdate = now
 
         local Ping = "--"
 
         pcall(function()
-            local item =
-                Stats.Network.ServerStatsItem["Data Ping"]
 
-            Ping = math.floor(item:GetValue())
+            Ping = math.floor(
+                Stats.Network.ServerStatsItem[
+                    "Data Ping"
+                ]:GetValue()
+            )
+
         end)
 
         StatsLabel.Text =
-            "FPS: " .. CurrentFPS .. "   |   PING: " .. Ping .. " ms"
+            "FPS: " .. FPS ..
+            "   |   PING: " .. Ping .. " ms"
     end
 end)
 
@@ -368,24 +457,27 @@ local PlayerLabel = Create("TextLabel", {
     Size = UDim2.new(1, -20, 0, 20),
     Position = UDim2.new(0, 10, 0, 62),
     BackgroundTransparency = 1,
-    Text = "SO NGUOI CHOI: " .. #Players:GetPlayers(),
+    Text = "SO NGUOI CHOI: " ..
+        #Players:GetPlayers(),
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 11,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Center
+    Font = Enum.Font.GothamBold
 }, Main)
 
 task.spawn(function()
+
     while Main.Parent do
+
         PlayerLabel.Text =
-            "SO NGUOI CHOI: " .. #Players:GetPlayers()
+            "SO NGUOI CHOI: " ..
+            #Players:GetPlayers()
 
         task.wait(1)
     end
 end)
 
 --==================================================
--- SERVER TARGET
+-- TARGET PLAYER
 --==================================================
 
 Create("TextLabel", {
@@ -418,7 +510,10 @@ local ServerInput = Create("TextBox", {
     ClearTextOnFocus = false
 }, InputBG)
 
-ServerInput:GetPropertyChangedSignal("Text"):Connect(function()
+ServerInput:GetPropertyChangedSignal(
+    "Text"
+):Connect(function()
+
     local n = tonumber(ServerInput.Text)
 
     if not n then
@@ -459,24 +554,30 @@ local Status = Create("TextLabel", {
 --==================================================
 
 local function GetServers(targetPlayers)
+
     local success, result = pcall(function()
+
         local URL =
             "https://games.roblox.com/v1/games/"
-            .. PlaceId
-            .. "/servers/Public?sortOrder=Asc&limit=100"
+            .. PlaceId ..
+            "/servers/Public?sortOrder=Asc&limit=100"
 
         return HttpService:JSONDecode(
             game:HttpGet(URL)
         )
     end)
 
-    if not success or not result or not result.data then
+    if not success
+    or not result
+    or not result.data then
+
         return {}
     end
 
     local servers = {}
 
     for _, server in ipairs(result.data) do
+
         if server.playing == targetPlayers
         and server.playing < server.maxPlayers
         and server.id ~= game.JobId then
@@ -501,42 +602,65 @@ local HopButton = Create("TextButton", {
 Corner(HopButton, 8)
 
 HopButton.MouseButton1Click:Connect(function()
-    local target = tonumber(ServerInput.Text) or 1
 
-    Status.Text = "Dang tim server..."
-    Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    local target =
+        tonumber(ServerInput.Text) or 1
 
-    local servers = GetServers(target)
+    Status.Text =
+        "Dang tim server..."
+
+    Status.TextColor3 =
+        Color3.fromRGB(255, 200, 0)
+
+    local servers =
+        GetServers(target)
 
     if #servers > 0 then
-        local server =
-            servers[math.random(1, #servers)]
 
-        Status.Text = "Da tim thay! Dang hop..."
-        Status.TextColor3 = Color3.fromRGB(0, 255, 0)
+        local server =
+            servers[
+                math.random(1, #servers)
+            ]
+
+        Status.Text =
+            "Da tim thay! Dang hop..."
+
+        Status.TextColor3 =
+            Color3.fromRGB(0, 255, 0)
 
         pcall(function()
-            TeleportService:TeleportToPlaceInstance(
-                PlaceId,
-                server.id,
-                LocalPlayer
-            )
+
+            TeleportService:
+                TeleportToPlaceInstance(
+                    PlaceId,
+                    server.id,
+                    LocalPlayer
+                )
         end)
+
     else
-        Status.Text = "Khong tim thay server!"
-        Status.TextColor3 = Color3.fromRGB(255, 60, 60)
+
+        Status.Text =
+            "Khong tim thay server!"
+
+        Status.TextColor3 =
+            Color3.fromRGB(255, 60, 60)
 
         task.wait(2)
 
         if Status.Parent then
-            Status.Text = "San sang..."
-            Status.TextColor3 = Color3.fromRGB(0, 255, 0)
+
+            Status.Text =
+                "San sang..."
+
+            Status.TextColor3 =
+                Color3.fromRGB(0, 255, 0)
         end
     end
 end)
 
 --==================================================
--- FIX LAG BUTTON
+-- STRONG FIX LAG BUTTON
 --==================================================
 
 local FixButton = Create("TextButton", {
@@ -552,23 +676,31 @@ local FixButton = Create("TextButton", {
 Corner(FixButton, 8)
 
 FixButton.MouseButton1Click:Connect(function()
+
     if FixLagEnabled then
+
         DisableFixLag()
 
-        FixButton.Text = "FIX LAG: OFF"
+        FixButton.Text =
+            "FIX LAG: OFF"
+
         FixButton.BackgroundColor3 =
             Color3.fromRGB(80, 80, 80)
+
     else
+
         EnableFixLag()
 
-        FixButton.Text = "FIX LAG: ON"
+        FixButton.Text =
+            "FIX LAG: ON"
+
         FixButton.BackgroundColor3 =
             Color3.fromRGB(0, 190, 0)
     end
 end)
 
 --==================================================
--- HIDE / SHOW BUTTON
+-- TOGGLE
 --==================================================
 
 local Toggle = Create("TextButton", {
@@ -589,23 +721,32 @@ Stroke(Toggle, Color3.fromRGB(0, 255, 0), 2)
 MakeDraggable(Toggle)
 
 Close.MouseButton1Click:Connect(function()
+
     Main.Visible = false
     Toggle.Visible = true
 end)
 
 Toggle.MouseButton1Click:Connect(function()
+
     Main.Visible = true
     Toggle.Visible = false
 end)
 
 --==================================================
--- F5 TOGGLE
+-- F5
 --==================================================
 
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
+UserInputService.InputBegan:Connect(function(
+    input,
+    processed
+)
+
+    if processed then
+        return
+    end
 
     if input.KeyCode == Enum.KeyCode.F5 then
+
         if Main.Visible then
             Main.Visible = false
             Toggle.Visible = true
@@ -619,7 +760,7 @@ end)
 print("================================")
 print("HopSV v3 Loaded")
 print("Server Hop: ON")
-print("Fix Lag: Ready")
+print("Strong Fix Lag: READY")
 print("FPS / Ping: ON")
 print("Mobile Drag: ON")
 print("================================")
