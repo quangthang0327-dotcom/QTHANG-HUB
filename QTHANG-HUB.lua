@@ -1,6 +1,12 @@
---// HopSV v4
---// Server Hop + Strong Fix Lag + Graphics 99% + FPS + Ping
---// Creator: @qthangccth
+--==================================================
+-- HopSV v5 - FIX GUI + FIX LAG + GRAPHICS 99%
+--==================================================
+
+repeat task.wait() until game:IsLoaded()
+
+--==================================================
+-- SERVICES
+--==================================================
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
@@ -14,121 +20,284 @@ local Stats = game:GetService("Stats")
 local LocalPlayer = Players.LocalPlayer
 local PlaceId = game.PlaceId
 
+if not LocalPlayer then
+    warn("HopSV: Khong tim thay LocalPlayer")
+    return
+end
+
 --==================================================
--- CLEAN OLD GUI
+-- XÓA GUI CŨ
 --==================================================
 
-if _G.QH then
-    pcall(function()
-        _G.QH:Destroy()
-    end)
-end
+pcall(function()
+    if _G.HopSV_GUI then
+        _G.HopSV_GUI:Destroy()
+        _G.HopSV_GUI = nil
+    end
+end)
+
+--==================================================
+-- TẠO GUI - NHIỀU FALLBACK
+--==================================================
 
 local GUI = Instance.new("ScreenGui")
 GUI.Name = "HopSV"
 GUI.ResetOnSpawn = false
 GUI.IgnoreGuiInset = true
 GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-GUI.Parent = CoreGui
 
-_G.QH = GUI
+local guiCreated = false
+
+-- Ưu tiên gethui
+pcall(function()
+    if type(gethui) == "function" then
+        local hui = gethui()
+        if hui then
+            GUI.Parent = hui
+            guiCreated = true
+        end
+    end
+end)
+
+-- Fallback PlayerGui
+if not guiCreated then
+    pcall(function()
+        local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
+        if PlayerGui then
+            GUI.Parent = PlayerGui
+            guiCreated = true
+        end
+    end)
+end
+
+-- Fallback CoreGui
+if not guiCreated then
+    pcall(function()
+        GUI.Parent = CoreGui
+        if GUI.Parent then
+            guiCreated = true
+        end
+    end)
+end
+
+if not guiCreated then
+    warn("HopSV: Khong the tao GUI")
+    return
+end
+
+_G.HopSV_GUI = GUI
 
 --==================================================
--- SETTINGS
+-- VARIABLES
 --==================================================
 
 local FixLagEnabled = false
 local Graphics99Enabled = false
+local MenuVisible = true
+local Hopping = false
 
-local FixLagConnection
-local LightingConnection
-local GraphicsConnection
-
-local OldLighting = {}
-local OldEffects = {}
-local GraphicsSaved = {}
+local OldMaterial = {}
+local OldParticle = {}
+local OldTransparency = {}
+local OldDecalTransparency = {}
+local OldTerrainDecoration = nil
 
 --==================================================
--- HELPERS
+-- MAIN FRAME
 --==================================================
 
-local function Create(class, properties, parent)
-    local obj = Instance.new(class)
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Parent = GUI
+Main.Size = UDim2.new(0, 270, 0, 300)
+Main.Position = UDim2.new(0.5, -135, 0.5, -150)
+Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Main.BorderSizePixel = 0
+Main.Active = true
 
-    for property, value in pairs(properties) do
-        obj[property] = value
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 10)
+Corner.Parent = Main
+
+--==================================================
+-- TITLE
+--==================================================
+
+local Title = Instance.new("TextLabel")
+Title.Parent = Main
+Title.Size = UDim2.new(1, -20, 0, 35)
+Title.Position = UDim2.new(0, 10, 0, 5)
+Title.BackgroundTransparency = 1
+Title.Text = "HOPSV"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 20
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+--==================================================
+-- FPS / PING
+--==================================================
+
+local Info = Instance.new("TextLabel")
+Info.Parent = Main
+Info.Size = UDim2.new(1, -20, 0, 25)
+Info.Position = UDim2.new(0, 10, 0, 38)
+Info.BackgroundTransparency = 1
+Info.Text = "FPS: -- | Ping: --"
+Info.TextColor3 = Color3.fromRGB(200, 200, 200)
+Info.TextSize = 13
+Info.Font = Enum.Font.Gotham
+Info.TextXAlignment = Enum.TextXAlignment.Left
+
+local PlayerCount = Instance.new("TextLabel")
+PlayerCount.Parent = Main
+PlayerCount.Size = UDim2.new(1, -20, 0, 22)
+PlayerCount.Position = UDim2.new(0, 10, 0, 60)
+PlayerCount.BackgroundTransparency = 1
+PlayerCount.TextColor3 = Color3.fromRGB(180, 180, 180)
+PlayerCount.TextSize = 12
+PlayerCount.Font = Enum.Font.Gotham
+PlayerCount.TextXAlignment = Enum.TextXAlignment.Left
+
+--==================================================
+-- TARGET PLAYER INPUT
+--==================================================
+
+local Input = Instance.new("TextBox")
+Input.Parent = Main
+Input.Size = UDim2.new(1, -20, 0, 35)
+Input.Position = UDim2.new(0, 10, 0, 88)
+Input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Input.BorderSizePixel = 0
+Input.PlaceholderText = "Số người server (1-50)"
+Input.Text = "1"
+Input.TextColor3 = Color3.fromRGB(255, 255, 255)
+Input.PlaceholderColor3 = Color3.fromRGB(140, 140, 140)
+Input.TextSize = 14
+Input.Font = Enum.Font.Gotham
+
+local InputCorner = Instance.new("UICorner")
+InputCorner.CornerRadius = UDim.new(0, 7)
+InputCorner.Parent = Input
+
+--==================================================
+-- BUTTON FUNCTION
+--==================================================
+
+local function CreateButton(text, y)
+    local Button = Instance.new("TextButton")
+    Button.Parent = Main
+    Button.Size = UDim2.new(1, -20, 0, 35)
+    Button.Position = UDim2.new(0, 10, 0, y)
+    Button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    Button.BorderSizePixel = 0
+    Button.Text = text
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.TextSize = 13
+    Button.Font = Enum.Font.GothamBold
+    Button.AutoButtonColor = true
+
+    local C = Instance.new("UICorner")
+    C.CornerRadius = UDim.new(0, 7)
+    C.Parent = Button
+
+    return Button
+end
+
+--==================================================
+-- BUTTONS
+--==================================================
+
+local HopButton = CreateButton("HOP SERVER", 130)
+local FixButton = CreateButton("FIX LAG: OFF", 170)
+local GraphicsButton = CreateButton("GRAPHICS 99%: OFF", 210)
+local MenuButton = CreateButton("ẨN MENU", 250)
+
+--==================================================
+-- DRAG MENU MOBILE
+--==================================================
+
+local dragging = false
+local dragStart
+local startPos
+
+local function UpdateDrag(input)
+    local delta = input.Position - dragStart
+
+    Main.Position = UDim2.new(
+        startPos.X.Scale,
+        startPos.X.Offset + delta.X,
+        startPos.Y.Scale,
+        startPos.Y.Offset + delta.Y
+    )
+end
+
+Title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragging = true
+        dragStart = input.Position
+        startPos = Main.Position
     end
+end)
 
-    obj.Parent = parent
-    return obj
-end
+Title.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
 
-local function Corner(parent, radius)
-    return Create("UICorner", {
-        CornerRadius = UDim.new(0, radius)
-    }, parent)
-end
+        dragging = false
+    end
+end)
 
-local function Stroke(parent, color, thickness)
-    return Create("UIStroke", {
-        Color = color,
-        Thickness = thickness
-    }, parent)
-end
-
---==================================================
--- MOBILE DRAG
---==================================================
-
-local function MakeDraggable(frame, handle)
-    handle = handle or frame
-
-    local dragging = false
-    local dragStart
-    local startPosition
-
-    handle.InputBegan:Connect(function(input)
-
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-
-            dragging = true
-            dragStart = input.Position
-            startPosition = frame.Position
-
-            input.Changed:Connect(function()
-
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-
-            end)
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-
-        if not dragging then
-            return
-        end
-
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch then
-
-            local delta = input.Position - dragStart
-
-            frame.Position = UDim2.new(
-                startPosition.X.Scale,
-                startPosition.X.Offset + delta.X,
-                startPosition.Y.Scale,
-                startPosition.Y.Offset + delta.Y
-            )
-        end
-    end)
-end
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (
+        input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch
+    ) then
+        UpdateDrag(input)
+    end
+end)
 
 --==================================================
--- STRONG FIX LAG
+-- FPS / PING UPDATE
+--==================================================
+
+local frames = 0
+local lastTime = tick()
+local fps = 0
+
+RunService.RenderStepped:Connect(function()
+    frames += 1
+
+    local now = tick()
+
+    if now - lastTime >= 1 then
+        fps = frames
+        frames = 0
+        lastTime = now
+
+        local ping = "--"
+
+        pcall(function()
+            local item = Stats.Network.ServerStatsItem["Data Ping"]
+
+            if item then
+                ping = math.floor(item:GetValue())
+            end
+        end)
+
+        Info.Text = "FPS: " .. fps .. " | Ping: " .. ping .. " ms"
+        PlayerCount.Text =
+            "Players: " ..
+            #Players:GetPlayers() ..
+            "/" ..
+            Players.MaxPlayers
+    end
+end)
+
+--==================================================
+-- FIX LAG
 --==================================================
 
 local function OptimizeObject(obj)
@@ -140,29 +309,23 @@ local function OptimizeObject(obj)
     or obj:IsA("Fire")
     or obj:IsA("Sparkles") then
 
-        obj.Enabled = false
-        return
-    end
-
-    if obj:IsA("BloomEffect")
-    or obj:IsA("BlurEffect")
-    or obj:IsA("SunRaysEffect")
-    or obj:IsA("DepthOfFieldEffect") then
-
-        if OldEffects[obj] == nil then
-            OldEffects[obj] = obj.Enabled
+        if OldParticle[obj] == nil then
+            OldParticle[obj] = obj.Enabled
         end
 
-        obj.Enabled = false
-        return
-    end
+        pcall(function()
+            obj.Enabled = false
+        end)
 
-    if obj:IsA("BasePart") then
+    elseif obj:IsA("BasePart") then
+
+        if OldMaterial[obj] == nil then
+            OldMaterial[obj] = obj.Material
+        end
 
         pcall(function()
             obj.Material = Enum.Material.SmoothPlastic
         end)
-
     end
 end
 
@@ -173,150 +336,114 @@ local function EnableFixLag()
     end
 
     FixLagEnabled = true
+    FixButton.Text = "FIX LAG: ON"
 
-    OldLighting.GlobalShadows =
-        Lighting.GlobalShadows
+    task.spawn(function()
 
-    OldLighting.FogEnd =
-        Lighting.FogEnd
+        local objects = workspace:GetDescendants()
 
-    OldLighting.FogStart =
-        Lighting.FogStart
-
-    OldLighting.Brightness =
-        Lighting.Brightness
-
-    OldLighting.EnvironmentDiffuseScale =
-        Lighting.EnvironmentDiffuseScale
-
-    OldLighting.EnvironmentSpecularScale =
-        Lighting.EnvironmentSpecularScale
-
-    Lighting.GlobalShadows = false
-    Lighting.FogEnd = 100000
-    Lighting.FogStart = 100000
-    Lighting.Brightness = 1
-    Lighting.EnvironmentDiffuseScale = 0
-    Lighting.EnvironmentSpecularScale = 0
-
-    for _, obj in ipairs(Lighting:GetChildren()) do
-        OptimizeObject(obj)
-    end
-
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        OptimizeObject(obj)
-    end
-
-    FixLagConnection =
-        workspace.DescendantAdded:Connect(function(obj)
+        for i, obj in ipairs(objects) do
 
             if not FixLagEnabled then
-                return
+                break
             end
 
-            task.defer(function()
-
-                if obj and obj.Parent then
-                    OptimizeObject(obj)
-                end
-
+            pcall(function()
+                OptimizeObject(obj)
             end)
-        end)
 
-    LightingConnection =
-        Lighting.ChildAdded:Connect(function(obj)
-
-            if not FixLagEnabled then
-                return
+            -- Chia nhỏ việc quét để tránh giật khi bật
+            if i % 150 == 0 then
+                task.wait()
             end
-
-            task.defer(function()
-
-                if obj and obj.Parent then
-                    OptimizeObject(obj)
-                end
-
-            end)
-        end)
+        end
+    end)
 end
 
 local function DisableFixLag()
 
-    if not FixLagEnabled then
-        return
-    end
-
     FixLagEnabled = false
+    FixButton.Text = "FIX LAG: OFF"
 
-    if FixLagConnection then
-        FixLagConnection:Disconnect()
-        FixLagConnection = nil
-    end
-
-    if LightingConnection then
-        LightingConnection:Disconnect()
-        LightingConnection = nil
-    end
-
-    pcall(function()
-
-        Lighting.GlobalShadows =
-            OldLighting.GlobalShadows
-
-        Lighting.FogEnd =
-            OldLighting.FogEnd
-
-        Lighting.FogStart =
-            OldLighting.FogStart
-
-        Lighting.Brightness =
-            OldLighting.Brightness
-
-        Lighting.EnvironmentDiffuseScale =
-            OldLighting.EnvironmentDiffuseScale
-
-        Lighting.EnvironmentSpecularScale =
-            OldLighting.EnvironmentSpecularScale
-
-    end)
-
-    for obj, state in pairs(OldEffects) do
-
+    for obj, material in pairs(OldMaterial) do
         if obj and obj.Parent then
-
             pcall(function()
-                obj.Enabled = state
+                obj.Material = material
             end)
-
         end
     end
 
-    table.clear(OldEffects)
+    OldMaterial = {}
+
+    for obj, enabled in pairs(OldParticle) do
+        if obj and obj.Parent then
+            pcall(function()
+                obj.Enabled = enabled
+            end)
+        end
+    end
+
+    OldParticle = {}
 end
+
+FixButton.MouseButton1Click:Connect(function()
+
+    if FixLagEnabled then
+        DisableFixLag()
+    else
+        EnableFixLag()
+    end
+
+end)
+
+--==================================================
+-- TỰ ĐỘNG TỐI ƯU OBJECT MỚI
+--==================================================
+
+workspace.DescendantAdded:Connect(function(obj)
+
+    if FixLagEnabled then
+        task.defer(function()
+            pcall(function()
+                OptimizeObject(obj)
+            end)
+        end)
+    end
+
+end)
 
 --==================================================
 -- GRAPHICS 99%
 --==================================================
 
-local function HideGraphics(obj)
+local function HideObject(obj)
+
+    -- Không ẩn nhân vật của mình
+    if LocalPlayer.Character
+    and obj:IsDescendantOf(LocalPlayer.Character) then
+        return
+    end
 
     if obj:IsA("BasePart") then
 
-        if GraphicsSaved[obj] == nil then
-            GraphicsSaved[obj] =
-                obj.LocalTransparencyModifier
+        if OldTransparency[obj] == nil then
+            OldTransparency[obj] = obj.LocalTransparencyModifier
         end
 
-        obj.LocalTransparencyModifier = 1
+        pcall(function()
+            obj.LocalTransparencyModifier = 1
+        end)
 
     elseif obj:IsA("Decal")
     or obj:IsA("Texture") then
 
-        if GraphicsSaved[obj] == nil then
-            GraphicsSaved[obj] = obj.Transparency
+        if OldDecalTransparency[obj] == nil then
+            OldDecalTransparency[obj] = obj.Transparency
         end
 
-        obj.Transparency = 1
+        pcall(function()
+            obj.Transparency = 1
+        end)
 
     elseif obj:IsA("ParticleEmitter")
     or obj:IsA("Trail")
@@ -325,19 +452,13 @@ local function HideGraphics(obj)
     or obj:IsA("Fire")
     or obj:IsA("Sparkles") then
 
-        if GraphicsSaved[obj] == nil then
-            GraphicsSaved[obj] = obj.Enabled
+        if OldParticle[obj] == nil then
+            OldParticle[obj] = obj.Enabled
         end
 
-        obj.Enabled = false
-
-    elseif obj:IsA("PostEffect") then
-
-        if GraphicsSaved[obj] == nil then
-            GraphicsSaved[obj] = obj.Enabled
-        end
-
-        obj.Enabled = false
+        pcall(function()
+            obj.Enabled = false
+        end)
     end
 end
 
@@ -348,590 +469,250 @@ local function EnableGraphics99()
     end
 
     Graphics99Enabled = true
+    GraphicsButton.Text = "GRAPHICS 99%: ON"
 
     pcall(function()
+        OldTerrainDecoration = workspace.Terrain.Decoration
         workspace.Terrain.Decoration = false
     end)
 
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        HideGraphics(obj)
-    end
+    task.spawn(function()
 
-    GraphicsConnection =
-        workspace.DescendantAdded:Connect(function(obj)
+        local objects = workspace:GetDescendants()
+
+        for i, obj in ipairs(objects) do
 
             if not Graphics99Enabled then
-                return
+                break
             end
 
-            task.defer(function()
-
-                if obj and obj.Parent then
-                    HideGraphics(obj)
-                end
-
+            pcall(function()
+                HideObject(obj)
             end)
-        end)
+
+            if i % 150 == 0 then
+                task.wait()
+            end
+        end
+    end)
 end
 
 local function DisableGraphics99()
 
-    if not Graphics99Enabled then
-        return
-    end
-
     Graphics99Enabled = false
+    GraphicsButton.Text = "GRAPHICS 99%: OFF"
 
-    if GraphicsConnection then
-        GraphicsConnection:Disconnect()
-        GraphicsConnection = nil
-    end
-
-    for obj, value in pairs(GraphicsSaved) do
-
+    for obj, transparency in pairs(OldTransparency) do
         if obj and obj.Parent then
-
             pcall(function()
-
-                if obj:IsA("BasePart") then
-
-                    obj.LocalTransparencyModifier = value
-
-                elseif obj:IsA("Decal")
-                or obj:IsA("Texture") then
-
-                    obj.Transparency = value
-
-                elseif obj:IsA("ParticleEmitter")
-                or obj:IsA("Trail")
-                or obj:IsA("Beam")
-                or obj:IsA("Smoke")
-                or obj:IsA("Fire")
-                or obj:IsA("Sparkles")
-                or obj:IsA("PostEffect") then
-
-                    obj.Enabled = value
-                end
-
+                obj.LocalTransparencyModifier = transparency
             end)
         end
     end
 
-    table.clear(GraphicsSaved)
+    OldTransparency = {}
 
-    pcall(function()
-        workspace.Terrain.Decoration = true
-    end)
-end
-
---==================================================
--- LOADING
---==================================================
-
-local Loading = Create("Frame", {
-    Size = UDim2.new(0, 220, 0, 105),
-    Position = UDim2.new(0.5, -110, 0.5, -52),
-    BackgroundColor3 = Color3.fromRGB(15, 25, 15),
-    BorderSizePixel = 0
-}, GUI)
-
-Corner(Loading, 12)
-Stroke(Loading, Color3.fromRGB(0, 255, 0), 2)
-
-Create("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 28),
-    Position = UDim2.new(0, 0, 0, 8),
-    BackgroundTransparency = 1,
-    Text = "HopSV v4",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 18,
-    Font = Enum.Font.GothamBlack
-}, Loading)
-
-local BarBG = Create("Frame", {
-    Size = UDim2.new(0.84, 0, 0, 13),
-    Position = UDim2.new(0.08, 0, 0, 48),
-    BackgroundColor3 = Color3.fromRGB(30, 40, 30),
-    BorderSizePixel = 0
-}, Loading)
-
-Corner(BarBG, 7)
-
-local Bar = Create("Frame", {
-    Size = UDim2.new(0, 0, 1, 0),
-    BackgroundColor3 = Color3.fromRGB(0, 255, 0),
-    BorderSizePixel = 0
-}, BarBG)
-
-Corner(Bar, 7)
-
-local LoadingText = Create("TextLabel", {
-    Size = UDim2.new(1, 0, 0, 20),
-    Position = UDim2.new(0, 0, 0, 72),
-    BackgroundTransparency = 1,
-    Text = "Dang tai... 0%",
-    TextColor3 = Color3.fromRGB(0, 255, 0),
-    TextSize = 11,
-    Font = Enum.Font.GothamBold
-}, Loading)
-
-task.spawn(function()
-
-    for i = 0, 100, 10 do
-
-        Bar.Size =
-            UDim2.new(i / 100, 0, 1, 0)
-
-        LoadingText.Text =
-            "Dang tai... " .. i .. "%"
-
-        task.wait(0.035)
+    for obj, transparency in pairs(OldDecalTransparency) do
+        if obj and obj.Parent then
+            pcall(function()
+                obj.Transparency = transparency
+            end)
+        end
     end
 
-    task.wait(0.15)
+    OldDecalTransparency = {}
 
-    if Loading then
-        Loading:Destroy()
+    for obj, enabled in pairs(OldParticle) do
+        if obj and obj.Parent then
+            pcall(function()
+                obj.Enabled = enabled
+            end)
+        end
     end
-end)
 
-task.wait(0.55)
+    OldParticle = {}
 
---==================================================
--- MAIN GUI
---==================================================
-
-local Main = Create("Frame", {
-    Size = UDim2.new(0, 235, 0, 285),
-    Position = UDim2.new(0.5, -117, 0.5, -142),
-    BackgroundColor3 = Color3.fromRGB(15, 25, 15),
-    BorderSizePixel = 0,
-    Active = true
-}, GUI)
-
-Corner(Main, 12)
-Stroke(Main, Color3.fromRGB(0, 255, 0), 1.5)
-
---==================================================
--- HEADER
---==================================================
-
-local Header = Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 34),
-    BackgroundColor3 = Color3.fromRGB(8, 18, 8),
-    BorderSizePixel = 0,
-    Active = true
-}, Main)
-
-Corner(Header, 12)
-
-Create("TextLabel", {
-    Size = UDim2.new(1, -45, 1, 0),
-    Position = UDim2.new(0, 10, 0, 0),
-    BackgroundTransparency = 1,
-    Text = "HopSV v4",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 14,
-    Font = Enum.Font.GothamBlack,
-    TextXAlignment = Enum.TextXAlignment.Left
-}, Header)
-
-local Close = Create("TextButton", {
-    Size = UDim2.new(0, 25, 0, 25),
-    Position = UDim2.new(1, -30, 0, 5),
-    BackgroundColor3 = Color3.fromRGB(40, 60, 40),
-    Text = "X",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 12,
-    Font = Enum.Font.GothamBold
-}, Header)
-
-Corner(Close, 6)
-
-MakeDraggable(Main, Header)
-
---==================================================
--- FPS / PING
---==================================================
-
-local StatsLabel = Create("TextLabel", {
-    Size = UDim2.new(1, -20, 0, 22),
-    Position = UDim2.new(0, 10, 0, 39),
-    BackgroundTransparency = 1,
-    Text = "FPS: --   |   PING: --",
-    TextColor3 = Color3.fromRGB(0, 255, 0),
-    TextSize = 12,
-    Font = Enum.Font.GothamBlack
-}, Main)
-
-local Frames = 0
-local LastFPSUpdate = os.clock()
-
-RunService.RenderStepped:Connect(function()
-
-    Frames += 1
-
-    local now = os.clock()
-
-    if now - LastFPSUpdate >= 1 then
-
-        local FPS = Frames
-
-        Frames = 0
-        LastFPSUpdate = now
-
-        local Ping = "--"
-
+    if OldTerrainDecoration ~= nil then
         pcall(function()
-
-            Ping = math.floor(
-                Stats.Network.ServerStatsItem[
-                    "Data Ping"
-                ]:GetValue()
-            )
+            workspace.Terrain.Decoration = OldTerrainDecoration
         end)
 
-        StatsLabel.Text =
-            "FPS: " .. FPS ..
-            "   |   PING: " .. Ping .. " ms"
+        OldTerrainDecoration = nil
     end
+end
+
+GraphicsButton.MouseButton1Click:Connect(function()
+
+    if Graphics99Enabled then
+        DisableGraphics99()
+    else
+        EnableGraphics99()
+    end
+
 end)
 
 --==================================================
--- PLAYER COUNT
+-- OBJECT MỚI KHI GRAPHICS 99%
 --==================================================
 
-local PlayerLabel = Create("TextLabel", {
-    Size = UDim2.new(1, -20, 0, 20),
-    Position = UDim2.new(0, 10, 0, 62),
-    BackgroundTransparency = 1,
-    Text = "SO NGUOI CHOI: " ..
-        #Players:GetPlayers(),
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 11,
-    Font = Enum.Font.GothamBold
-}, Main)
+workspace.DescendantAdded:Connect(function(obj)
 
-task.spawn(function()
+    if Graphics99Enabled then
 
-    while Main.Parent do
+        task.defer(function()
 
-        PlayerLabel.Text =
-            "SO NGUOI CHOI: " ..
-            #Players:GetPlayers()
+            pcall(function()
+                HideObject(obj)
+            end)
 
-        task.wait(1)
+        end)
+
     end
+
 end)
-
---==================================================
--- TARGET PLAYER
---==================================================
-
-Create("TextLabel", {
-    Size = UDim2.new(1, -20, 0, 17),
-    Position = UDim2.new(0, 10, 0, 84),
-    BackgroundTransparency = 1,
-    Text = "SO NGUOI CHOI KHI HOP SV",
-    TextColor3 = Color3.fromRGB(255, 215, 0),
-    TextSize = 10,
-    Font = Enum.Font.GothamBold
-}, Main)
-
-local InputBG = Create("Frame", {
-    Size = UDim2.new(0, 45, 0, 28),
-    Position = UDim2.new(0.5, -22, 0, 103),
-    BackgroundColor3 = Color3.fromRGB(8, 18, 8),
-    BorderSizePixel = 0
-}, Main)
-
-Corner(InputBG, 7)
-Stroke(InputBG, Color3.fromRGB(255, 215, 0), 1)
-
-local ServerInput = Create("TextBox", {
-    Size = UDim2.new(1, 0, 1, 0),
-    BackgroundTransparency = 1,
-    Text = "1",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 16,
-    Font = Enum.Font.GothamBlack,
-    ClearTextOnFocus = false
-}, InputBG)
-
-ServerInput:GetPropertyChangedSignal("Text"):Connect(function()
-
-    local n = tonumber(ServerInput.Text)
-
-    if not n then
-        ServerInput.Text = "1"
-    elseif n < 1 then
-        ServerInput.Text = "1"
-    elseif n > 50 then
-        ServerInput.Text = "50"
-    end
-end)
-
-Create("TextLabel", {
-    Size = UDim2.new(1, -20, 0, 15),
-    Position = UDim2.new(0, 10, 0, 133),
-    BackgroundTransparency = 1,
-    Text = "Nhap so nguoi muon tim",
-    TextColor3 = Color3.fromRGB(255, 165, 0),
-    TextSize = 9,
-    Font = Enum.Font.GothamBold
-}, Main)
-
---==================================================
--- STATUS
---==================================================
-
-local Status = Create("TextLabel", {
-    Size = UDim2.new(1, -20, 0, 18),
-    Position = UDim2.new(0, 10, 0, 148),
-    BackgroundTransparency = 1,
-    Text = "San sang...",
-    TextColor3 = Color3.fromRGB(0, 255, 0),
-    TextSize = 10,
-    Font = Enum.Font.GothamBold
-}, Main)
 
 --==================================================
 -- SERVER HOP
 --==================================================
 
-local function GetServers(targetPlayers)
+local function GetTargetPlayers()
 
-    local success, result = pcall(function()
+    local number = tonumber(Input.Text)
 
-        local URL =
-            "https://games.roblox.com/v1/games/"
-            .. PlaceId ..
-            "/servers/Public?sortOrder=Asc&limit=100"
-
-        return HttpService:JSONDecode(
-            game:HttpGet(URL)
-        )
-    end)
-
-    if not success
-    or not result
-    or not result.data then
-
-        return {}
+    if not number then
+        return 1
     end
 
-    local servers = {}
+    number = math.floor(number)
 
-    for _, server in ipairs(result.data) do
-
-        if server.playing == targetPlayers
-        and server.playing < server.maxPlayers
-        and server.id ~= game.JobId then
-
-            table.insert(servers, server)
-        end
+    if number < 1 then
+        number = 1
     end
 
-    return servers
+    if number > 50 then
+        number = 50
+    end
+
+    Input.Text = tostring(number)
+
+    return number
 end
 
-local HopButton = Create("TextButton", {
-    Size = UDim2.new(0.86, 0, 0, 31),
-    Position = UDim2.new(0.07, 0, 0, 170),
-    BackgroundColor3 = Color3.fromRGB(0, 220, 0),
-    Text = "HOP SERVER",
-    TextColor3 = Color3.new(0, 0, 0),
-    TextSize = 13,
-    Font = Enum.Font.GothamBlack
-}, Main)
+local function HopServer()
 
-Corner(HopButton, 8)
+    if Hopping then
+        return
+    end
 
-HopButton.MouseButton1Click:Connect(function()
+    Hopping = true
+    HopButton.Text = "ĐANG TÌM SERVER..."
 
-    local target =
-        tonumber(ServerInput.Text) or 1
+    local target = GetTargetPlayers()
+    local found = false
 
-    Status.Text =
-        "Dang tim server..."
+    task.spawn(function()
 
-    Status.TextColor3 =
-        Color3.fromRGB(255, 200, 0)
+        local cursor = ""
 
-    local servers =
-        GetServers(target)
+        for page = 1, 10 do
 
-    if #servers > 0 then
+            if found then
+                break
+            end
 
-        local server =
-            servers[
-                math.random(1, #servers)
-            ]
+            local url =
+                "https://games.roblox.com/v1/games/" ..
+                PlaceId ..
+                "/servers/Public?sortOrder=Asc&limit=100"
 
-        Status.Text =
-            "Da tim thay! Dang hop..."
+            if cursor ~= "" then
+                url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+            end
 
-        Status.TextColor3 =
-            Color3.fromRGB(0, 255, 0)
+            local success, result = pcall(function()
+                return game:HttpGet(url)
+            end)
 
-        pcall(function()
+            if not success then
+                break
+            end
 
-            TeleportService:
-                TeleportToPlaceInstance(
-                    PlaceId,
-                    server.id,
-                    LocalPlayer
-                )
-        end)
+            local dataSuccess, data = pcall(function()
+                return HttpService:JSONDecode(result)
+            end)
 
-    else
+            if not dataSuccess or not data then
+                break
+            end
 
-        Status.Text =
-            "Khong tim thay server!"
+            for _, server in ipairs(data.data or {}) do
 
-        Status.TextColor3 =
-            Color3.fromRGB(255, 60, 60)
+                if server.id
+                and server.id ~= game.JobId
+                and server.playing
+                and server.maxPlayers
+                and server.playing == target then
 
-        task.wait(2)
+                    found = true
 
-        if Status.Parent then
+                    HopButton.Text = "ĐANG TELEPORT..."
 
-            Status.Text =
-                "San sang..."
+                    pcall(function()
+                        TeleportService:TeleportToPlaceInstance(
+                            PlaceId,
+                            server.id,
+                            LocalPlayer
+                        )
+                    end)
 
-            Status.TextColor3 =
-                Color3.fromRGB(0, 255, 0)
+                    break
+                end
+
+            end
+
+            cursor = data.nextPageCursor or ""
+
+            if cursor == "" then
+                break
+            end
+
+            task.wait(0.2)
         end
-    end
-end)
+
+        if not found then
+            HopButton.Text = "KHÔNG TÌM THẤY"
+            task.wait(1)
+            HopButton.Text = "HOP SERVER"
+        end
+
+        Hopping = false
+    end)
+end
+
+HopButton.MouseButton1Click:Connect(HopServer)
 
 --==================================================
--- FIX LAG BUTTON
+-- ẨN / HIỆN MENU
 --==================================================
 
-local FixButton = Create("TextButton", {
-    Size = UDim2.new(0.86, 0, 0, 29),
-    Position = UDim2.new(0.07, 0, 0, 206),
-    BackgroundColor3 = Color3.fromRGB(80, 80, 80),
-    Text = "FIX LAG: OFF",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 11,
-    Font = Enum.Font.GothamBlack
-}, Main)
+MenuButton.MouseButton1Click:Connect(function()
 
-Corner(FixButton, 8)
+    MenuVisible = not MenuVisible
 
-FixButton.MouseButton1Click:Connect(function()
-
-    if FixLagEnabled then
-
-        DisableFixLag()
-
-        FixButton.Text =
-            "FIX LAG: OFF"
-
-        FixButton.BackgroundColor3 =
-            Color3.fromRGB(80, 80, 80)
-
+    if MenuVisible then
+        Main.Visible = true
+        MenuButton.Text = "ẨN MENU"
     else
-
-        EnableFixLag()
-
-        FixButton.Text =
-            "FIX LAG: ON"
-
-        FixButton.BackgroundColor3 =
-            Color3.fromRGB(0, 190, 0)
+        Main.Visible = false
     end
+
 end)
 
 --==================================================
--- GRAPHICS 99% BUTTON
+-- PHÍM F5
 --==================================================
 
-local GraphicsButton = Create("TextButton", {
-    Size = UDim2.new(0.86, 0, 0, 29),
-    Position = UDim2.new(0.07, 0, 0, 241),
-    BackgroundColor3 = Color3.fromRGB(80, 80, 80),
-    Text = "GRAPHICS 99%: OFF",
-    TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 11,
-    Font = Enum.Font.GothamBlack
-}, Main)
-
-Corner(GraphicsButton, 8)
-
-GraphicsButton.MouseButton1Click:Connect(function()
-
-    if Graphics99Enabled then
-
-        DisableGraphics99()
-
-        GraphicsButton.Text =
-            "GRAPHICS 99%: OFF"
-
-        GraphicsButton.BackgroundColor3 =
-            Color3.fromRGB(80, 80, 80)
-
-        Status.Text =
-            "Da khoi phuc do hoa"
-
-    else
-
-        EnableGraphics99()
-
-        GraphicsButton.Text =
-            "GRAPHICS 99%: ON"
-
-        GraphicsButton.BackgroundColor3 =
-            Color3.fromRGB(180, 80, 0)
-
-        Status.Text =
-            "Graphics 99%: ON"
-    end
-end)
-
---==================================================
--- TOGGLE
---==================================================
-
-local Toggle = Create("TextButton", {
-    Size = UDim2.new(0, 55, 0, 55),
-    Position = UDim2.new(0.5, -27, 0.5, -27),
-    BackgroundColor3 = Color3.fromRGB(20, 30, 20),
-    Text = "MENU",
-    TextColor3 = Color3.fromRGB(0, 255, 0),
-    TextSize = 12,
-    Font = Enum.Font.GothamBlack,
-    Visible = false,
-    Active = true
-}, GUI)
-
-Corner(Toggle, 12)
-Stroke(Toggle, Color3.fromRGB(0, 255, 0), 2)
-
-MakeDraggable(Toggle)
-
-Close.MouseButton1Click:Connect(function()
-
-    Main.Visible = false
-    Toggle.Visible = true
-end)
-
-Toggle.MouseButton1Click:Connect(function()
-
-    Main.Visible = true
-    Toggle.Visible = false
-end)
-
---==================================================
--- F5
---==================================================
-
-UserInputService.InputBegan:Connect(function(
-    input,
-    processed
-)
+UserInputService.InputBegan:Connect(function(input, processed)
 
     if processed then
         return
@@ -939,29 +720,21 @@ UserInputService.InputBegan:Connect(function(
 
     if input.KeyCode == Enum.KeyCode.F5 then
 
-        if Main.Visible then
+        MenuVisible = not MenuVisible
+        Main.Visible = MenuVisible
 
-            Main.Visible = false
-            Toggle.Visible = true
-
-        else
-
-            Main.Visible = true
-            Toggle.Visible = false
-
-        end
     end
+
 end)
 
 --==================================================
--- DONE
+-- HOÀN TẤT
 --==================================================
 
 print("================================")
-print("HopSV v4 Loaded")
-print("Server Hop: ON")
-print("Strong Fix Lag: READY")
-print("Graphics 99%: READY")
-print("FPS / Ping: ON")
-print("Mobile Drag: ON")
-print("================================")fromR
+print("HopSV v5 loaded successfully")
+print("GUI: OK")
+print("Fix Lag: OK")
+print("Graphics 99%: OK")
+print("Server Hop: OK")
+print("================================")
