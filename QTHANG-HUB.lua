@@ -1,6 +1,7 @@
---// HopSV v3
---// Server Hop + Strong Fix Lag + FPS + Ping
---// Creator: @qthangccth
+-- HopSV v3 - Fixed Server Hop
+-- Server Hop + Fix Lag + FPS + Ping
+-- Creator: @qthangccth
+-- Fixed: Server hop with proper API fallback
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
@@ -14,47 +15,30 @@ local Stats = game:GetService("Stats")
 local LocalPlayer = Players.LocalPlayer
 local PlaceId = game.PlaceId
 
---==================================================
--- CLEAN OLD GUI
---==================================================
-
 if _G.QH then
     pcall(function()
         _G.QH:Destroy()
     end)
 end
 
-local GUI = Instance.new("ScreenGui")
-GUI.Name = "HopSV"
-GUI.ResetOnSpawn = false
-GUI.IgnoreGuiInset = true
-GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-GUI.Parent = CoreGui
+_G.QH = Instance.new("ScreenGui")
+_G.QH.Name = "HopSV"
+_G.QH.ResetOnSpawn = false
+_G.QH.IgnoreGuiInset = true
+_G.QH.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+_G.QH.Parent = CoreGui
 
-_G.QH = GUI
-
---==================================================
--- SETTINGS
---==================================================
+local GUI = _G.QH
 
 local FixLagEnabled = false
 local FixLagConnection = nil
-local LightingConnection = nil
-
 local OldLighting = {}
-local OldEffects = {}
-
---==================================================
--- HELPERS
---==================================================
 
 local function Create(class, properties, parent)
     local obj = Instance.new(class)
-
     for property, value in pairs(properties) do
         obj[property] = value
     end
-
     obj.Parent = parent
     return obj
 end
@@ -72,13 +56,8 @@ local function Stroke(parent, color, thickness)
     }, parent)
 end
 
---==================================================
--- MOBILE DRAG
---==================================================
-
 local function MakeDraggable(frame, handle)
     handle = handle or frame
-
     local dragging = false
     local dragStart
     local startPosition
@@ -86,7 +65,6 @@ local function MakeDraggable(frame, handle)
     handle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
-
             dragging = true
             dragStart = input.Position
             startPosition = frame.Position
@@ -100,15 +78,10 @@ local function MakeDraggable(frame, handle)
     end)
 
     UserInputService.InputChanged:Connect(function(input)
-        if not dragging then
-            return
-        end
-
+        if not dragging then return end
         if input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch then
-
             local delta = input.Position - dragStart
-
             frame.Position = UDim2.new(
                 startPosition.X.Scale,
                 startPosition.X.Offset + delta.X,
@@ -119,117 +92,49 @@ local function MakeDraggable(frame, handle)
     end)
 end
 
---==================================================
--- STRONG FIX LAG
---==================================================
-
-local function OptimizeObject(obj)
-
-    -- Tắt hiệu ứng hạt
-    if obj:IsA("ParticleEmitter")
-    or obj:IsA("Trail")
-    or obj:IsA("Beam")
-    or obj:IsA("Smoke")
-    or obj:IsA("Fire")
-    or obj:IsA("Sparkles") then
-
-        obj.Enabled = false
-        return
-    end
-
-    -- Tắt các hiệu ứng hậu kỳ nặng
-    if obj:IsA("BloomEffect")
-    or obj:IsA("BlurEffect")
-    or obj:IsA("SunRaysEffect")
-    or obj:IsA("DepthOfFieldEffect") then
-
-        if OldEffects[obj] == nil then
-            OldEffects[obj] = obj.Enabled
-        end
-
-        obj.Enabled = false
-        return
-    end
-
-    -- Giảm chất lượng Material nhưng KHÔNG xóa Mesh
-    if obj:IsA("BasePart") then
-        pcall(function()
-            obj.Material = Enum.Material.SmoothPlastic
-        end)
-    end
-end
-
 local function EnableFixLag()
-
-    if FixLagEnabled then
-        return
-    end
-
+    if FixLagEnabled then return end
     FixLagEnabled = true
 
-    -- Lưu Lighting
     OldLighting.GlobalShadows = Lighting.GlobalShadows
     OldLighting.FogEnd = Lighting.FogEnd
     OldLighting.FogStart = Lighting.FogStart
     OldLighting.Brightness = Lighting.Brightness
-    OldLighting.EnvironmentDiffuseScale =
-        Lighting.EnvironmentDiffuseScale
-    OldLighting.EnvironmentSpecularScale =
-        Lighting.EnvironmentSpecularScale
 
-    -- Lighting tối ưu
     Lighting.GlobalShadows = false
     Lighting.FogEnd = 100000
     Lighting.FogStart = 100000
     Lighting.Brightness = 1
-    Lighting.EnvironmentDiffuseScale = 0
-    Lighting.EnvironmentSpecularScale = 0
 
-    -- Tắt hiệu ứng trong Lighting
-    for _, obj in ipairs(Lighting:GetChildren()) do
-        OptimizeObject(obj)
+    local function OptimizeObject(obj)
+        if obj:IsA("ParticleEmitter")
+        or obj:IsA("Trail")
+        or obj:IsA("Smoke")
+        or obj:IsA("Fire")
+        or obj:IsA("Sparkles") then
+            obj.Enabled = false
+        elseif obj:IsA("Decal") or obj:IsA("Texture") then
+            obj.Transparency = 1
+        end
     end
 
-    -- Tối ưu Workspace hiện tại
     for _, obj in ipairs(workspace:GetDescendants()) do
         OptimizeObject(obj)
     end
 
-    -- Xử lý object mới
     FixLagConnection = workspace.DescendantAdded:Connect(function(obj)
-
-        if not FixLagEnabled then
-            return
+        if FixLagEnabled then
+            task.defer(function()
+                if obj and obj.Parent then
+                    OptimizeObject(obj)
+                end
+            end)
         end
-
-        task.defer(function()
-            if obj and obj.Parent then
-                OptimizeObject(obj)
-            end
-        end)
-    end)
-
-    -- Xử lý effect mới trong Lighting
-    LightingConnection = Lighting.ChildAdded:Connect(function(obj)
-
-        if not FixLagEnabled then
-            return
-        end
-
-        task.defer(function()
-            if obj and obj.Parent then
-                OptimizeObject(obj)
-            end
-        end)
     end)
 end
 
 local function DisableFixLag()
-
-    if not FixLagEnabled then
-        return
-    end
-
+    if not FixLagEnabled then return end
     FixLagEnabled = false
 
     if FixLagConnection then
@@ -237,48 +142,15 @@ local function DisableFixLag()
         FixLagConnection = nil
     end
 
-    if LightingConnection then
-        LightingConnection:Disconnect()
-        LightingConnection = nil
-    end
-
-    -- Khôi phục Lighting
     pcall(function()
-        Lighting.GlobalShadows =
-            OldLighting.GlobalShadows
-
-        Lighting.FogEnd =
-            OldLighting.FogEnd
-
-        Lighting.FogStart =
-            OldLighting.FogStart
-
-        Lighting.Brightness =
-            OldLighting.Brightness
-
-        Lighting.EnvironmentDiffuseScale =
-            OldLighting.EnvironmentDiffuseScale
-
-        Lighting.EnvironmentSpecularScale =
-            OldLighting.EnvironmentSpecularScale
+        Lighting.GlobalShadows = OldLighting.GlobalShadows
+        Lighting.FogEnd = OldLighting.FogEnd
+        Lighting.FogStart = OldLighting.FogStart
+        Lighting.Brightness = OldLighting.Brightness
     end)
-
-    -- Khôi phục PostEffect
-    for obj, state in pairs(OldEffects) do
-        if obj and obj.Parent then
-            pcall(function()
-                obj.Enabled = state
-            end)
-        end
-    end
-
-    table.clear(OldEffects)
 end
 
---==================================================
--- LOADING
---==================================================
-
+-- Loading
 local Loading = Create("Frame", {
     Size = UDim2.new(0, 220, 0, 105),
     Position = UDim2.new(0.5, -110, 0.5, -52),
@@ -327,31 +199,68 @@ local LoadingText = Create("TextLabel", {
 }, Loading)
 
 task.spawn(function()
-
     for i = 0, 100, 10 do
-
-        Bar.Size =
-            UDim2.new(i / 100, 0, 1, 0)
-
-        LoadingText.Text =
-            "Dang tai... " .. i .. "%"
-
-        task.wait(0.035)
+        Bar.Size = UDim2.new(i / 100, 0, 1, 0)
+        LoadingText.Text = "Dang tai... " .. i .. "%"
+        task.wait(0.03)
     end
+    task.wait(0.1)
+    if Loading then Loading:Destroy() end
+end)
 
-    task.wait(0.15)
+task.wait(0.5)
 
-    if Loading then
-        Loading:Destroy()
+-- Rainbow Frame
+local RainbowFrame = Create("Frame", {
+    Size = UDim2.new(0, 247, 0, 262),
+    Position = UDim2.new(0.5, -123.5, 0.5, -131),
+    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+    BorderSizePixel = 0
+}, GUI)
+
+Corner(RainbowFrame, 14)
+
+local RainbowGradient = Instance.new("UIGradient")
+RainbowGradient.Parent = RainbowFrame
+
+local colorList = {
+    Color3.fromRGB(255, 255, 255),
+    Color3.fromRGB(255, 0, 0),
+    Color3.fromRGB(255, 255, 0),
+    Color3.fromRGB(128, 0, 128),
+    Color3.fromRGB(0, 255, 0),
+    Color3.fromRGB(0, 0, 255),
+}
+
+local hueOffset = 0
+task.spawn(function()
+    while RainbowFrame and RainbowFrame.Parent do
+        hueOffset = hueOffset + 0.02
+        if hueOffset > 1 then hueOffset = 0 end
+        local colors = {}
+        local segmentCount = #colorList
+        for i = 0, segmentCount do
+            local ratio = i / segmentCount
+            local shiftedRatio = (ratio + hueOffset) % 1
+            local colorPosition = shiftedRatio * segmentCount
+            local colorIndex1 = math.floor(colorPosition) % segmentCount + 1
+            local colorIndex2 = (colorIndex1 % segmentCount) + 1
+            local blendFactor = colorPosition - math.floor(colorPosition)
+            local c1 = colorList[colorIndex1]
+            local c2 = colorList[colorIndex2]
+            local blendedColor = Color3.new(
+                c1.R + (c2.R - c1.R) * blendFactor,
+                c1.G + (c2.G - c1.G) * blendFactor,
+                c1.B + (c2.B - c1.B) * blendFactor
+            )
+            table.insert(colors, ColorSequenceKeypoint.new(ratio, blendedColor))
+        end
+        RainbowGradient.Color = ColorSequence.new(colors)
+        task.wait(0.03)
     end
 end)
 
-task.wait(0.55)
-
---==================================================
--- MAIN GUI
---==================================================
-
+-- Main
 local Main = Create("Frame", {
     Size = UDim2.new(0, 235, 0, 250),
     Position = UDim2.new(0.5, -117, 0.5, -125),
@@ -361,12 +270,19 @@ local Main = Create("Frame", {
 }, GUI)
 
 Corner(Main, 12)
-Stroke(Main, Color3.fromRGB(0, 255, 0), 1.5)
 
---==================================================
--- HEADER
---==================================================
+local function UpdateRainbow()
+    RainbowFrame.Position = UDim2.new(
+        Main.Position.X.Scale,
+        Main.Position.X.Offset - 6,
+        Main.Position.Y.Scale,
+        Main.Position.Y.Offset - 6
+    )
+end
 
+Main:GetPropertyChangedSignal("Position"):Connect(UpdateRainbow)
+
+-- Header
 local Header = Create("Frame", {
     Size = UDim2.new(1, 0, 0, 34),
     BackgroundColor3 = Color3.fromRGB(8, 18, 8),
@@ -401,10 +317,7 @@ Corner(Close, 6)
 
 MakeDraggable(Main, Header)
 
---==================================================
--- FPS / PING
---==================================================
-
+-- FPS/Ping
 local StatsLabel = Create("TextLabel", {
     Size = UDim2.new(1, -20, 0, 22),
     Position = UDim2.new(0, 10, 0, 39),
@@ -412,74 +325,49 @@ local StatsLabel = Create("TextLabel", {
     Text = "FPS: --   |   PING: --",
     TextColor3 = Color3.fromRGB(0, 255, 0),
     TextSize = 12,
-    Font = Enum.Font.GothamBlack
+    Font = Enum.Font.GothamBlack,
+    TextXAlignment = Enum.TextXAlignment.Center
 }, Main)
 
 local Frames = 0
 local LastFPSUpdate = os.clock()
 
 RunService.RenderStepped:Connect(function()
-
-    Frames += 1
-
+    Frames = Frames + 1
     local now = os.clock()
-
     if now - LastFPSUpdate >= 1 then
-
-        local FPS = Frames
-
+        local fps = Frames
         Frames = 0
         LastFPSUpdate = now
-
-        local Ping = "--"
-
+        local ping = "--"
         pcall(function()
-
-            Ping = math.floor(
-                Stats.Network.ServerStatsItem[
-                    "Data Ping"
-                ]:GetValue()
-            )
-
+            local item = Stats.Network.ServerStatsItem["Data Ping"]
+            ping = math.floor(item:GetValue())
         end)
-
-        StatsLabel.Text =
-            "FPS: " .. FPS ..
-            "   |   PING: " .. Ping .. " ms"
+        StatsLabel.Text = "FPS: " .. fps .. "   |   PING: " .. ping .. " ms"
     end
 end)
 
---==================================================
--- PLAYER COUNT
---==================================================
-
+-- Player Count
 local PlayerLabel = Create("TextLabel", {
     Size = UDim2.new(1, -20, 0, 20),
     Position = UDim2.new(0, 10, 0, 62),
     BackgroundTransparency = 1,
-    Text = "SO NGUOI CHOI: " ..
-        #Players:GetPlayers(),
+    Text = "SO NGUOI CHOI: " .. #Players:GetPlayers(),
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 11,
-    Font = Enum.Font.GothamBold
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Center
 }, Main)
 
 task.spawn(function()
-
     while Main.Parent do
-
-        PlayerLabel.Text =
-            "SO NGUOI CHOI: " ..
-            #Players:GetPlayers()
-
+        PlayerLabel.Text = "SO NGUOI CHOI: " .. #Players:GetPlayers()
         task.wait(1)
     end
 end)
 
---==================================================
--- TARGET PLAYER
---==================================================
-
+-- Server Target
 Create("TextLabel", {
     Size = UDim2.new(1, -20, 0, 17),
     Position = UDim2.new(0, 10, 0, 84),
@@ -510,12 +398,8 @@ local ServerInput = Create("TextBox", {
     ClearTextOnFocus = false
 }, InputBG)
 
-ServerInput:GetPropertyChangedSignal(
-    "Text"
-):Connect(function()
-
+ServerInput:GetPropertyChangedSignal("Text"):Connect(function()
     local n = tonumber(ServerInput.Text)
-
     if not n then
         ServerInput.Text = "1"
     elseif n < 1 then
@@ -535,10 +419,6 @@ Create("TextLabel", {
     Font = Enum.Font.GothamBold
 }, Main)
 
---==================================================
--- STATUS
---==================================================
-
 local Status = Create("TextLabel", {
     Size = UDim2.new(1, -20, 0, 18),
     Position = UDim2.new(0, 10, 0, 148),
@@ -549,44 +429,56 @@ local Status = Create("TextLabel", {
     Font = Enum.Font.GothamBold
 }, Main)
 
---==================================================
--- SERVER HOP
---==================================================
-
+-- FIXED SERVER HOP FUNCTION
 local function GetServers(targetPlayers)
-
-    local success, result = pcall(function()
-
-        local URL =
-            "https://games.roblox.com/v1/games/"
-            .. PlaceId ..
-            "/servers/Public?sortOrder=Asc&limit=100"
-
-        return HttpService:JSONDecode(
-            game:HttpGet(URL)
-        )
-    end)
-
-    if not success
-    or not result
-    or not result.data then
-
-        return {}
-    end
-
     local servers = {}
-
-    for _, server in ipairs(result.data) do
-
-        if server.playing == targetPlayers
-        and server.playing < server.maxPlayers
-        and server.id ~= game.JobId then
-
-            table.insert(servers, server)
+    
+    -- Try multiple pages
+    local cursor = ""
+    local attempts = 0
+    
+    while attempts < 4 do
+        attempts = attempts + 1
+        
+        local url = "https://games.roblox.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+        if cursor ~= "" then
+            url = url .. "&cursor=" .. cursor
+        end
+        
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet(url))
+        end)
+        
+        if success and result and result.data then
+            for _, server in ipairs(result.data) do
+                if server.id ~= game.JobId and server.playing < server.maxPlayers then
+                    if targetPlayers == 0 then
+                        -- Any server
+                        table.insert(servers, server)
+                    elseif server.playing == targetPlayers then
+                        table.insert(servers, server)
+                    end
+                end
+            end
+            
+            if result.nextPageCursor and result.nextPageCursor ~= "" then
+                cursor = result.nextPageCursor
+            else
+                break
+            end
+        else
+            break
         end
     end
-
+    
     return servers
+end
+
+local function HopToServer(serverId)
+    local success, err = pcall(function()
+        TeleportService:TeleportToPlaceInstance(PlaceId, serverId, LocalPlayer)
+    end)
+    return success, err
 end
 
 local HopButton = Create("TextButton", {
@@ -601,68 +493,62 @@ local HopButton = Create("TextButton", {
 
 Corner(HopButton, 8)
 
+local isHopping = false
+
 HopButton.MouseButton1Click:Connect(function()
-
-    local target =
-        tonumber(ServerInput.Text) or 1
-
-    Status.Text =
-        "Dang tim server..."
-
-    Status.TextColor3 =
-        Color3.fromRGB(255, 200, 0)
-
-    local servers =
-        GetServers(target)
-
-    if #servers > 0 then
-
-        local server =
-            servers[
-                math.random(1, #servers)
-            ]
-
-        Status.Text =
-            "Da tim thay! Dang hop..."
-
-        Status.TextColor3 =
-            Color3.fromRGB(0, 255, 0)
-
-        pcall(function()
-
-            TeleportService:
-                TeleportToPlaceInstance(
-                    PlaceId,
-                    server.id,
-                    LocalPlayer
-                )
-        end)
-
-    else
-
-        Status.Text =
-            "Khong tim thay server!"
-
-        Status.TextColor3 =
-            Color3.fromRGB(255, 60, 60)
-
-        task.wait(2)
-
-        if Status.Parent then
-
-            Status.Text =
-                "San sang..."
-
-            Status.TextColor3 =
-                Color3.fromRGB(0, 255, 0)
+    if isHopping then return end
+    isHopping = true
+    
+    local target = tonumber(ServerInput.Text) or 1
+    
+    Status.Text = "Dang tim server..."
+    Status.TextColor3 = Color3.fromRGB(255, 200, 0)
+    HopButton.Text = "DANG TIM..."
+    HopButton.BackgroundColor3 = Color3.fromRGB(200, 200, 0)
+    
+    task.spawn(function()
+        local servers = GetServers(target)
+        
+        if #servers > 0 then
+            local server = servers[math.random(1, #servers)]
+            Status.Text = "Da tim thay! Dang hop..."
+            Status.TextColor3 = Color3.fromRGB(0, 255, 0)
+            HopButton.Text = "DANG HOP..."
+            
+            local success, err = HopToServer(server.id)
+            
+            if not success then
+                -- Retry with TeleportAsync
+                local ok = pcall(function()
+                    TeleportService:TeleportAsync(PlaceId, {LocalPlayer}, 
+                        Instance.new("TeleportOptions"))
+                end)
+                
+                if not ok then
+                    Status.Text = "Hop that bai! Thu lai..."
+                    Status.TextColor3 = Color3.fromRGB(255, 60, 60)
+                    task.wait(2)
+                    Status.Text = "San sang..."
+                    Status.TextColor3 = Color3.fromRGB(0, 255, 0)
+                end
+            end
+        else
+            Status.Text = "Khong tim thay server!"
+            Status.TextColor3 = Color3.fromRGB(255, 60, 60)
+            task.wait(2)
+            if Status.Parent then
+                Status.Text = "San sang..."
+                Status.TextColor3 = Color3.fromRGB(0, 255, 0)
+            end
         end
-    end
+        
+        HopButton.Text = "HOP SERVER"
+        HopButton.BackgroundColor3 = Color3.fromRGB(0, 220, 0)
+        isHopping = false
+    end)
 end)
 
---==================================================
--- STRONG FIX LAG BUTTON
---==================================================
-
+-- Fix Lag Button
 local FixButton = Create("TextButton", {
     Size = UDim2.new(0.86, 0, 0, 29),
     Position = UDim2.new(0.07, 0, 0, 206),
@@ -676,91 +562,86 @@ local FixButton = Create("TextButton", {
 Corner(FixButton, 8)
 
 FixButton.MouseButton1Click:Connect(function()
-
     if FixLagEnabled then
-
         DisableFixLag()
-
-        FixButton.Text =
-            "FIX LAG: OFF"
-
-        FixButton.BackgroundColor3 =
-            Color3.fromRGB(80, 80, 80)
-
+        FixButton.Text = "FIX LAG: OFF"
+        FixButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
     else
-
         EnableFixLag()
-
-        FixButton.Text =
-            "FIX LAG: ON"
-
-        FixButton.BackgroundColor3 =
-            Color3.fromRGB(0, 190, 0)
+        FixButton.Text = "FIX LAG: ON"
+        FixButton.BackgroundColor3 = Color3.fromRGB(0, 190, 0)
     end
 end)
 
---==================================================
--- TOGGLE
---==================================================
-
+-- Toggle Button
 local Toggle = Create("TextButton", {
-    Size = UDim2.new(0, 55, 0, 55),
-    Position = UDim2.new(0.5, -27, 0.5, -27),
-    BackgroundColor3 = Color3.fromRGB(20, 30, 20),
+    Size = UDim2.new(0, 70, 0, 70),
+    Position = UDim2.new(0.5, -35, 0.5, -35),
+    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
     Text = "MENU",
-    TextColor3 = Color3.fromRGB(0, 255, 0),
-    TextSize = 12,
+    TextColor3 = Color3.fromRGB(255, 0, 0),
+    TextSize = 15,
     Font = Enum.Font.GothamBlack,
     Visible = false,
-    Active = true
+    Active = true,
+    AutoButtonColor = false
 }, GUI)
 
-Corner(Toggle, 12)
-Stroke(Toggle, Color3.fromRGB(0, 255, 0), 2)
+Corner(Toggle, 14)
+Stroke(Toggle, Color3.fromRGB(0, 0, 0), 3)
+
+local ToggleGradient = Instance.new("UIGradient")
+ToggleGradient.Parent = Toggle
+
+task.spawn(function()
+    local hue = 0
+    while Toggle and Toggle.Parent do
+        hue = (hue + 2) % 360
+        local colors = {}
+        for i = 0, 10 do
+            local h = ((hue + i * 36) % 360) / 360
+            table.insert(colors, ColorSequenceKeypoint.new(i / 10, Color3.fromHSV(h, 1, 1)))
+        end
+        ToggleGradient.Color = ColorSequence.new(colors)
+        Toggle.TextColor3 = Color3.fromHSV(hue / 360, 1, 1)
+        task.wait(0.03)
+    end
+end)
 
 MakeDraggable(Toggle)
 
 Close.MouseButton1Click:Connect(function()
-
     Main.Visible = false
+    RainbowFrame.Visible = false
     Toggle.Visible = true
+    Toggle.Text = "MO MENU"
 end)
 
 Toggle.MouseButton1Click:Connect(function()
-
     Main.Visible = true
+    RainbowFrame.Visible = true
     Toggle.Visible = false
 end)
 
---==================================================
--- F5
---==================================================
-
-UserInputService.InputBegan:Connect(function(
-    input,
-    processed
-)
-
-    if processed then
-        return
-    end
-
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
     if input.KeyCode == Enum.KeyCode.F5 then
-
         if Main.Visible then
             Main.Visible = false
+            RainbowFrame.Visible = false
             Toggle.Visible = true
+            Toggle.Text = "MO MENU"
         else
             Main.Visible = true
+            RainbowFrame.Visible = true
             Toggle.Visible = false
         end
     end
 end)
 
 print("================================")
-print("HopSV v3 Loaded")
-print("Server Hop: ON")
-print("Strong Fix Lag: READY")
+print("HopSV v3 Loaded - FIXED")
+print("Server Hop: FIXED (multi-page)")
+print("Fix Lag: Ready")
 print("FPS / Ping: ON")
-print("Mobile Drag: ON")
 print("================================")
